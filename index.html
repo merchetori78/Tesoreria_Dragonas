@@ -293,6 +293,49 @@
   .barra-track { background: #333333; border-radius: 100px; height: 8px; overflow: hidden; }
   .barra-fill { height: 100%; border-radius: 100px; transition: width 0.6s ease; }
 
+
+  /* ── MODAL CONFIRMACIÓN ── */
+  .modal-overlay {
+    position: fixed; inset: 0; z-index: 300;
+    background: rgba(0,0,0,0.5);
+    display: flex; align-items: flex-end; justify-content: center;
+    animation: fadeIn 0.2s ease;
+  }
+  .modal-overlay.oculto { display: none; }
+  .modal-card {
+    background: white; border-radius: 20px 20px 0 0;
+    padding: 20px 20px max(20px, env(safe-area-inset-bottom));
+    width: 100%; max-width: 480px;
+    box-shadow: 0 -8px 32px rgba(0,0,0,0.2);
+    animation: slideUp 0.3s ease;
+  }
+  @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+  .modal-titulo {
+    font-family: 'Cinzel', serif; font-size: 16px;
+    color: var(--dragon); margin-bottom: 14px;
+    padding-bottom: 10px; border-bottom: 1px solid var(--gris-medio);
+  }
+  .modal-fila {
+    display: flex; justify-content: space-between;
+    padding: 6px 0; border-bottom: 1px solid var(--gris-claro);
+    font-size: 13px;
+  }
+  .modal-fila:last-of-type { border-bottom: none; }
+  .modal-fila-label { color: var(--gris); font-weight: 600; }
+  .modal-fila-valor { color: var(--negro); text-align: right; max-width: 60%; }
+  .modal-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 14px; }
+  .modal-btn-cancel {
+    padding: 12px; border: 2px solid var(--gris-medio);
+    border-radius: 10px; background: white; color: var(--gris);
+    font-family: 'Nunito', sans-serif; font-size: 14px; font-weight: 700;
+    cursor: pointer;
+  }
+  .modal-btn-confirm {
+    padding: 12px; border: none; border-radius: 10px;
+    background: linear-gradient(135deg, var(--dragon), var(--dragon-dark));
+    color: white; font-family: 'Cinzel', serif; font-size: 14px;
+    cursor: pointer; box-shadow: var(--sombra);
+  }
   /* ── NAV ── */
   .nav-bottom {
     position: fixed; bottom: 0; left: 0; right: 0; z-index: 100;
@@ -512,6 +555,19 @@
     <button class="ajuste-btn" onclick="sincronizarSociasSheet()" style="width:100%;text-align:center;">
       🐉 Sincronizar socias con Sheet
     </button>
+  </div>
+</div>
+
+
+<!-- Modal confirmación movimiento -->
+<div class="modal-overlay oculto" id="modalConfirm">
+  <div class="modal-card">
+    <div class="modal-titulo">🐉 Confirmar movimiento</div>
+    <div id="modalContenido"></div>
+    <div class="modal-btns">
+      <button class="modal-btn-cancel" onclick="cerrarModal()">✏️ Corregir</button>
+      <button class="modal-btn-confirm" onclick="confirmarGuardar()">✅ Confirmar</button>
+    </div>
   </div>
 </div>
 
@@ -753,6 +809,15 @@ async function añadirSocia() {
   mostrarToast("✅ " + nombre + " añadida", "exito");
 }
 
+// ── ELIMINAR SOCIA ───────────────────────────────────────────────────────────
+async function eliminarSocia(i) {
+  if (!confirm("¿Eliminar a " + socias[i].nombre + "? Esta acción no se puede deshacer.")) return;
+  socias.splice(i, 1);
+  localStorage.setItem("dragonas_socias", JSON.stringify(socias));
+  renderSocias();
+  mostrarToast("✅ Socia eliminada", "exito");
+}
+
 // ── SOCIAS SHEET ─────────────────────────────────────────────────────────────
 async function cargarSociasDesdeSheet() {
   if (!scriptURL) return;
@@ -825,21 +890,42 @@ async function togglePago(i) {
 }
 
 // ── HISTORIAL ─────────────────────────────────────────────────────────────────
+function eliminarMovimiento(i) {
+  if (i < 0 || i >= historial.length) return;
+  const mov = historial[i];
+  if (!confirm("¿Eliminar este movimiento?\n" + mov.tipo + " · " + mov.categoria + " · " + parseFloat(mov.importe).toFixed(2) + " €\n" + mov.descripcion)) return;
+  historial.splice(i, 1);
+  localStorage.setItem("dragonas_historial", JSON.stringify(historial));
+  actualizarResumen();
+  renderHistorial();
+  mostrarToast("✅ Movimiento eliminado", "exito");
+}
+
 function renderHistorial() {
   const filtro = document.getElementById("filtroHist").value;
   const lista  = document.getElementById("listaMov");
   const datos  = filtro === "todos" ? historial : historial.filter(r => r.tipo.toLowerCase() === filtro);
   if (!datos.length) { lista.innerHTML = `<div style="text-align:center;color:var(--gris);padding:30px 0;font-size:13px;">Sin movimientos</div>`; return; }
-  lista.innerHTML = datos.map(r => `
+  lista.innerHTML = datos.map((r, i) => {
+    // Calcular índice real en historial
+    const idxReal = historial.indexOf(r);
+    return `
     <div class="mov-item">
       <div class="mov-dot ${r.tipo === 'Ingreso' ? 'ing' : 'gst'}"></div>
       <div class="mov-info">
         <div class="mov-desc">${r.descripcion}</div>
         <div class="mov-meta">${r.categoria} · ${r.fecha}</div>
       </div>
-      <div class="mov-importe ${r.tipo === 'Ingreso' ? 'ing' : 'gst'}">${r.tipo === 'Ingreso' ? '+' : '-'}${parseFloat(r.importe).toFixed(2)} €</div>
-    </div>
-  `).join("");
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px;flex-shrink:0;">
+        <div class="mov-importe ${r.tipo === 'Ingreso' ? 'ing' : 'gst'}">${r.tipo === 'Ingreso' ? '+' : '-'}${parseFloat(r.importe).toFixed(2)} €</div>
+        <button onclick="eliminarMovimiento(${idxReal})"
+          style="background:#fee2e2;border:1px solid #fca5a5;border-radius:6px;padding:3px 8px;
+          color:#dc2626;font-family:'Nunito',sans-serif;font-size:10px;font-weight:700;cursor:pointer;">
+          🗑️
+        </button>
+      </div>
+    </div>`;
+  }).join("");
 }
 
 // ── STATS ─────────────────────────────────────────────────────────────────────
@@ -949,6 +1035,3 @@ init();
 </script>
 </body>
 </html>
-
-
-
