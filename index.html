@@ -504,7 +504,14 @@
   
   <div class="ajuste-card">
     <div class="ajuste-label">Cuota anual por defecto</div>
-    <input class="socia-input" id="inputCuotaDefault" type="number" step="0.01" placeholder="Ej: 50" style="margin-top:6px;width:100%;" oninput="guardarCuotaDefault()">
+    <input class="socia-input" id="inputCuotaDefault" type="number" step="0.01" placeholder="Ej: 10" style="margin-top:6px;width:100%;" oninput="guardarCuotaDefault()">
+  </div>
+  <div class="ajuste-card">
+    <div class="ajuste-label">Sincronizar socias con Sheet</div>
+    <div style="font-size:12px;color:var(--gris);margin-bottom:10px;">Envía la lista completa de socias al Sheet. Úsalo solo la primera vez.</div>
+    <button class="ajuste-btn" onclick="sincronizarSociasSheet()" style="width:100%;text-align:center;">
+      🐉 Sincronizar socias con Sheet
+    </button>
   </div>
 </div>
 
@@ -563,7 +570,7 @@ let tipoActual = "ingreso";
 let catActual = "cuotas";
 let historial = JSON.parse(localStorage.getItem("dragonas_historial") || "[]");
 let socias = JSON.parse(localStorage.getItem("dragonas_socias") || "[]");
-let scriptURL = localStorage.getItem("dragonas_url") || "https://script.google.com/macros/s/AKfycbxd9CD4H1Az1ZIEWFYRy5ELisuTvkIVQlGh50Jhvoj6N1kk2bvnbVeCWusmlntkgFG6/exec";
+let scriptURL = localStorage.getItem("dragonas_url") || "https://script.google.com/macros/s/AKfycbxacseRv7ho-qRxUW59ljc2NoNRsR7EZODdHe5USiB2wCaOoRaf5VjuXAa2rvW6s-I2/exec";
 let cuotaDefault = parseFloat(localStorage.getItem("dragonas_cuota_default") || "0");
 
 // ── INIT ──────────────────────────────────────────────────────────────────────
@@ -721,33 +728,83 @@ function toggleFormSocia() {
   document.getElementById("inputCuotaSocia").value = cuotaDefault || "";
 }
 
-function añadirSocia() {
+async function añadirSocia() {
   const nombre = document.getElementById("inputNombreSocia").value.trim();
-  const cuota  = parseFloat(document.getElementById("inputCuotaSocia").value) || cuotaDefault || 0;
+  const cuota  = parseFloat(document.getElementById("inputCuotaSocia").value) || cuotaDefault || 10;
   if (!nombre) { mostrarToast("⚠️ Introduce el nombre", "error"); return; }
-  socias.push({ nombre, cuota, pagada: false });
+  const nuevaSocia = { nombre, cuota, pagada: false, tipo: "Socia" };
+  socias.push(nuevaSocia);
   localStorage.setItem("dragonas_socias", JSON.stringify(socias));
+  // Guardar en Sheet
+  if (scriptURL) {
+    try {
+      const params = new URLSearchParams({
+        accion: "escribir_socia",
+        nombre: nuevaSocia.nombre,
+        cuota: nuevaSocia.cuota,
+        pagada: "false",
+        tipo: "Socia"
+      });
+      await fetch(scriptURL + "?" + params.toString(), { method:"GET", mode:"no-cors" });
+    } catch(e) {}
+  }
   toggleFormSocia();
   renderSocias();
   mostrarToast("✅ " + nombre + " añadida", "exito");
 }
 
+// ── SOCIAS SHEET ─────────────────────────────────────────────────────────────
+async function cargarSociasDesdeSheet() {
+  if (!scriptURL) return;
+  try {
+    const resp = await fetch(scriptURL + "?accion=leer_socias");
+    if (!resp.ok) return;
+    const datos = await resp.json();
+    if (datos && datos.length > 0) {
+      socias = datos;
+      localStorage.setItem("dragonas_socias", JSON.stringify(socias));
+    }
+  } catch(e) { console.log("No se pudieron cargar socias del Sheet:", e); }
+}
+
+async function sincronizarSociasSheet() {
+  if (!scriptURL) return;
+  try {
+    const params = new URLSearchParams({
+      accion: "sincronizar_socias",
+      socias: JSON.stringify(socias)
+    });
+    await fetch(scriptURL + "?" + params.toString(), { method:"GET", mode:"no-cors" });
+    mostrarToast("✅ Socias sincronizadas con Sheet", "exito");
+  } catch(e) { mostrarToast("⚠️ Error al sincronizar socias", "error"); }
+}
+
 async function togglePago(i) {
-  // Esta función ahora solo aplica a socias manuales pendientes
-  // Las del Sheet ya están marcadas como pagadas automáticamente
-  const sociaManual = socias.find((s, idx) => idx === i);
+  const sociaManual = socias[i];
   if (!sociaManual) return;
 
   sociaManual.pagada = !sociaManual.pagada;
   localStorage.setItem("dragonas_socias", JSON.stringify(socias));
+
+  // Actualizar en Sheet
+  if (scriptURL) {
+    try {
+      const params = new URLSearchParams({
+        accion: "actualizar_socia",
+        nombre: sociaManual.nombre,
+        pagada: sociaManual.pagada.toString()
+      });
+      await fetch(scriptURL + "?" + params.toString(), { method:"GET", mode:"no-cors" });
+    } catch(e) {}
+  }
 
   if (sociaManual.pagada) {
     const ahora = new Date();
     const registro = {
       fecha: ahora.toLocaleDateString("es-ES"),
       hora: ahora.toLocaleTimeString("es-ES"),
-      tipo: "Ingreso", categoria: "Cuotas",
-      importe: parseFloat(sociaManual.cuota || 0).toFixed(2),
+      tipo: "Ingreso", categoria: "Cuota Socio",
+      importe: parseFloat(sociaManual.cuota || 10).toFixed(2),
       descripcion: "Cuota anual — " + sociaManual.nombre
     };
     historial.unshift(registro);
@@ -851,7 +908,7 @@ function mostrarPantalla(p) {
   ["Movimiento","Socias","Historial","Stats","Ajustes"].forEach(n =>
     document.getElementById("nav"+n).classList.toggle("active", p === n.toLowerCase())
   );
-  if (p === "socias")    { actualizarResumen(); renderSocias(); }
+  if (p === "socias")    { cargarSociasDesdeSheet().then(() => { actualizarResumen(); renderSocias(); }); }
   if (p === "historial") { actualizarResumen(); renderHistorial(); }
   if (p === "stats")     { actualizarResumen(); renderStats(); }
   if (p === "ajustes")  document.getElementById("textoURL").textContent = scriptURL||"No configurado";
