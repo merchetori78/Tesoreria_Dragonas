@@ -457,6 +457,14 @@
     <input class="desc-input" id="descInput" type="text" placeholder="Añade una nota...">
   </div>
 
+  <div class="card">
+    <div class="seccion-label">Fecha del movimiento</div>
+    <input type="date" id="fechaMovimiento"
+      style="width:100%;background:var(--fondo3);border:2px solid var(--gris-medio);
+      border-radius:10px;padding:11px 13px;color:var(--blanco);
+      font-family:'Nunito',sans-serif;font-size:14px;outline:none;">
+  </div>
+
   <button class="btn-guardar ing" id="btnGuardar" onclick="guardarMovimiento()">
     Registrar Ingreso
   </button>
@@ -715,6 +723,7 @@ async function guardarMovimiento() {
     btn.disabled = false; selTipo(tipoActual);
     document.getElementById("importeInput").value = "";
     document.getElementById("descInput").value = "";
+    document.getElementById("fechaMovimiento").value = new Date().toISOString().split("T")[0];
   }, 1000);
 }
 
