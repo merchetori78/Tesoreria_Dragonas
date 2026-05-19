@@ -564,6 +564,13 @@
       🐉 Sincronizar socias con Sheet
     </button>
   </div>
+  <div class="ajuste-card">
+    <div class="ajuste-label">📥 Cargar historial desde Sheet</div>
+    <div style="font-size:12px;color:var(--gris);margin-bottom:10px;">Lee todos los movimientos del Sheet y los añade al historial local. Úsalo si has registrado algo desde otro dispositivo o si el historial no está actualizado.</div>
+    <button class="ajuste-btn" onclick="cargarHistorialDesdeSheet()" style="width:100%;text-align:center;background:rgba(46,204,113,0.15);border-color:rgba(46,204,113,0.4);color:#1a6b3a;">
+      📥 Cargar historial desde Sheet
+    </button>
+  </div>
 </div>
 
 
@@ -645,6 +652,8 @@ function init() {
   actualizarResumen();
   document.getElementById("overlayConfig").classList.add("oculto");
   if (cuotaDefault) document.getElementById("inputCuotaDefault").value = cuotaDefault;
+  // Sincronizar historial con Sheet al arrancar (silencioso si falla)
+  setTimeout(() => cargarHistorialDesdeSheet().catch(() => {}), 1200);
 }
 
 // ── TIPO ──────────────────────────────────────────────────────────────────────
@@ -714,6 +723,7 @@ async function guardarMovimiento() {
       const registroSheet = { ...registro, importe: registro.importe.replace(".", ",") };
       const params = new URLSearchParams(registroSheet);
       params.append("accion", "escribir");
+      params.append("hoja", "Tesoreria");
       await fetch(scriptURL + "?" + params.toString(), { method:"GET", mode:"no-cors" });
     } catch(e) {}
   }
@@ -755,6 +765,41 @@ function actualizarResumen() {
   // Actualizar contador socios siempre
   const contEl = document.getElementById("contadorSociosCuota");
   if (contEl) contEl.textContent = socias.filter(s => s.pagada).length;
+}
+
+// ── CARGAR HISTORIAL DESDE SHEET ─────────────────────────────────────────────
+async function cargarHistorialDesdeSheet() {
+  if (!scriptURL) return false;
+  try {
+    mostrarToast("🔄 Sincronizando con Sheet...", "");
+    const resp = await fetch(scriptURL + "?accion=leer_historial&hoja=Tesoreria");
+    if (!resp.ok) { mostrarToast("⚠️ No se pudo conectar con el Sheet", "error"); return false; }
+    const datos = await resp.json();
+    if (!datos || !datos.length) { mostrarToast("ℹ️ Sheet vacío o sin datos", ""); return false; }
+    // Convertir importes con coma a punto para uso interno
+    const nuevos = datos.map(r => ({
+      ...r,
+      importe: String(r.importe).replace(",", ".")
+    }));
+    // Fusionar: el Sheet manda, pero conservar movimientos locales que no estén en el sheet
+    // Se identifica por fecha+hora+descripcion
+    const claveSheet = new Set(nuevos.map(r => r.fecha + "|" + r.hora + "|" + r.descripcion));
+    const soloLocal = historial.filter(r => !claveSheet.has(r.fecha + "|" + r.hora + "|" + r.descripcion));
+    historial = [...nuevos, ...soloLocal];
+    // Ordenar por fecha desc (formato dd/mm/yyyy)
+    historial.sort((a, b) => {
+      const [da, ma, ya] = a.fecha.split("/").map(Number);
+      const [db, mb, yb] = b.fecha.split("/").map(Number);
+      return new Date(yb, mb-1, db) - new Date(ya, ma-1, da);
+    });
+    localStorage.setItem("dragonas_historial", JSON.stringify(historial));
+    actualizarResumen();
+    mostrarToast("✅ Historial sincronizado (" + historial.length + " registros)", "exito");
+    return true;
+  } catch(e) {
+    mostrarToast("⚠️ Error al leer el Sheet", "error");
+    return false;
+  }
 }
 
 // ── SOCIAS ────────────────────────────────────────────────────────────────────
@@ -889,6 +934,7 @@ async function togglePago(i) {
         const registroSheet = { ...registro, importe: registro.importe.replace(".", ",") };
         const params = new URLSearchParams(registroSheet);
         params.append("accion", "escribir");
+        params.append("hoja", "Tesoreria");
         await fetch(scriptURL + "?" + params.toString(), { method:"GET", mode:"no-cors" });
       } catch(e) {}
     }
