@@ -776,16 +776,11 @@ async function cargarHistorialDesdeSheet() {
     if (!resp.ok) { mostrarToast("⚠️ No se pudo conectar con el Sheet", "error"); return false; }
     const datos = await resp.json();
     if (!datos || !datos.length) { mostrarToast("ℹ️ Sheet vacío o sin datos", ""); return false; }
-    // Convertir importes con coma a punto para uso interno
-    const nuevos = datos.map(r => ({
+    // El Sheet es la fuente de verdad: reemplaza el historial local completamente
+    historial = datos.map(r => ({
       ...r,
       importe: String(r.importe).replace(",", ".")
     }));
-    // Fusionar: el Sheet manda, pero conservar movimientos locales que no estén en el sheet
-    // Se identifica por fecha+hora+descripcion
-    const claveSheet = new Set(nuevos.map(r => r.fecha + "|" + r.hora + "|" + r.descripcion));
-    const soloLocal = historial.filter(r => !claveSheet.has(r.fecha + "|" + r.hora + "|" + r.descripcion));
-    historial = [...nuevos, ...soloLocal];
     // Ordenar por fecha desc (formato dd/mm/yyyy)
     historial.sort((a, b) => {
       const [da, ma, ya] = a.fecha.split("/").map(Number);
