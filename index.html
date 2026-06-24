@@ -728,6 +728,9 @@ async function guardarMovimiento() {
     } catch(e) {}
   }
 
+  // Si el movimiento es una cuota de socia, también actualiza la pestaña Socias.
+  await registrarCuotaEnSociasDesdeMovimiento(registro);
+
   actualizarResumen();
   mostrarToast("✅ " + registro.tipo + " registrado", "exito");
   setTimeout(() => {
@@ -736,6 +739,84 @@ async function guardarMovimiento() {
     document.getElementById("descInput").value = "";
     document.getElementById("fechaMovimiento").value = new Date().toISOString().split("T")[0];
   }, 1000);
+}
+
+// ── CUOTAS → SOCIAS ─────────────────────────────────────────────────────────
+function normalizarTexto(txt) {
+  return String(txt || "")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9ñ]+/g, " ")
+    .trim();
+}
+
+function extraerNombreSociaDesdeDescripcion(desc) {
+  let nombre = String(desc || "").trim();
+  nombre = nombre
+    .replace(/^cuota(\s+anual)?(\s+de)?\s*[-–—:]?\s*/i, "")
+    .replace(/^cuota\s+socia?\s*[-–—:]?\s*/i, "")
+    .replace(/^de\s+/i, "")
+    .replace(/^transferencia\s*[-–—:]?\s*/i, "")
+    .trim();
+
+  // Si no hay nombre real, no creamos una socia llamada “Cuota Socio”.
+  if (!nombre || normalizarTexto(nombre) === "cuota socio") return "";
+  return nombre;
+}
+
+async function guardarSociaEnSheet(socia) {
+  if (!scriptURL || !socia) return;
+  try {
+    const params = new URLSearchParams({
+      accion: "actualizar_socia",
+      nombre: socia.nombre,
+      cuota: socia.cuota,
+      pagada: socia.pagada.toString(),
+      tipo: socia.tipo || "Socia"
+    });
+    await fetch(scriptURL + "?" + params.toString(), { method:"GET", mode:"no-cors" });
+  } catch(e) {}
+}
+
+async function crearSociaEnSheet(socia) {
+  if (!scriptURL || !socia) return;
+  try {
+    const params = new URLSearchParams({
+      accion: "escribir_socia",
+      nombre: socia.nombre,
+      cuota: socia.cuota,
+      pagada: socia.pagada.toString(),
+      tipo: socia.tipo || "Socia"
+    });
+    await fetch(scriptURL + "?" + params.toString(), { method:"GET", mode:"no-cors" });
+  } catch(e) {}
+}
+
+async function registrarCuotaEnSociasDesdeMovimiento(registro) {
+  if (!registro || registro.tipo !== "Ingreso" || registro.categoria !== "Cuota Socio") return;
+
+  const nombre = extraerNombreSociaDesdeDescripcion(registro.descripcion);
+  if (!nombre) {
+    mostrarToast("ℹ️ Cuota registrada. Añade el nombre en descripción para marcar la socia.", "");
+    return;
+  }
+
+  const claveNombre = normalizarTexto(nombre);
+  const importeCuota = parseFloat(registro.importe || 0) || cuotaDefault || 10;
+  let socia = socias.find(s => normalizarTexto(s.nombre) === claveNombre);
+
+  if (socia) {
+    socia.pagada = true;
+    if (!parseFloat(socia.cuota || 0)) socia.cuota = importeCuota;
+    await guardarSociaEnSheet(socia);
+  } else {
+    socia = { nombre, cuota: importeCuota, pagada: true, tipo: "Socia" };
+    socias.push(socia);
+    await crearSociaEnSheet(socia);
+  }
+
+  localStorage.setItem("dragonas_socias", JSON.stringify(socias));
+  renderSocias();
 }
 
 // ── RESUMEN ───────────────────────────────────────────────────────────────────
