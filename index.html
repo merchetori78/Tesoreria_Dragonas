@@ -647,9 +647,25 @@ let scriptURL = localStorage.getItem("dragonas_url") || "https://script.google.c
 let cuotaDefault = parseFloat(localStorage.getItem("dragonas_cuota_default") || "0");
 
 // ── INIT ──────────────────────────────────────────────────────────────────────
+function fechaHoyISO() {
+  const ahora = new Date();
+  const año = ahora.getFullYear();
+  const mes = String(ahora.getMonth() + 1).padStart(2, "0");
+  const dia = String(ahora.getDate()).padStart(2, "0");
+  return `${año}-${mes}-${dia}`;
+}
+
+function fechaISOaES(fechaISO) {
+  const partes = String(fechaISO || "").split("-");
+  if (partes.length !== 3) return new Date().toLocaleDateString("es-ES");
+  const [año, mes, dia] = partes;
+  return `${dia}/${mes}/${año}`;
+}
+
 function init() {
   const ahora = new Date();
   document.getElementById("añoBadge").textContent = ahora.getFullYear();
+  document.getElementById("fechaMovimiento").value = fechaHoyISO();
   renderCategorias();
   actualizarResumen();
   document.getElementById("overlayConfig").classList.add("oculto");
@@ -706,8 +722,11 @@ async function guardarMovimiento() {
   if (!importe || importe <= 0) { mostrarToast("⚠️ Introduce un importe válido", "error"); return; }
 
   const ahora = new Date();
+  const fechaSeleccionada = document.getElementById("fechaMovimiento").value;
+  if (!fechaSeleccionada) { mostrarToast("⚠️ Selecciona una fecha", "error"); return; }
+
   const registro = {
-    fecha: ahora.toLocaleDateString("es-ES"),
+    fecha: fechaISOaES(fechaSeleccionada),
     hora: ahora.toLocaleTimeString("es-ES"),
     tipo: tipoActual === "ingreso" ? "Ingreso" : "Gasto",
     categoria: getCatLabel(tipoActual, catActual),
@@ -739,7 +758,7 @@ async function guardarMovimiento() {
     btn.disabled = false; selTipo(tipoActual);
     document.getElementById("importeInput").value = "";
     document.getElementById("descInput").value = "";
-    document.getElementById("fechaMovimiento").value = new Date().toISOString().split("T")[0];
+    document.getElementById("fechaMovimiento").value = fechaHoyISO();
   }, 1000);
 }
 
